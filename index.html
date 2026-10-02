@@ -165,6 +165,8 @@ button.pulse{border-color:var(--yellow);box-shadow:0 0 0 3px rgba(255,201,60,.45
 .spot{position:fixed;border-radius:16px;box-shadow:0 0 0 9999px rgba(8,16,28,.64);pointer-events:none;transition:all .25s}
 .tutlock,.tutlock body{overflow:hidden;overscroll-behavior:none}
 #tut{touch-action:none}
+.tprobe{position:fixed;left:0;top:0;width:1px;height:1px;visibility:hidden;pointer-events:none}
+.tdbg{position:fixed;left:6px;top:6px;z-index:5;background:rgba(0,0,0,.75);color:#fff;font-size:11px;padding:3px 6px;border-radius:6px;pointer-events:none}
 .spot.none{inset:0;width:auto;height:auto;border-radius:0;box-shadow:none;background:rgba(8,16,28,.64)}
 .tarrow{position:fixed;font-size:28px;animation:bob 1s ease-in-out infinite;pointer-events:none}
 .tpanel{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));width:min(436px,calc(100% - 20px));display:flex;gap:6px;align-items:flex-end}
@@ -281,7 +283,7 @@ function intro(){
       <div class="card" style="text-align:left"><label class="sub" for="nm">감독 이름</label><input class="name" id="nm" maxlength="6" placeholder="예: 김태양" value="${G.name||""}">
       <p class="sub" style="margin:10px 0 0">목표는 단 하나. <b>감독으로 살아남기.</b> 지면 윗분의 인내심이 깎이고, 바닥나면 경질이에요. 경질돼도 감독은 강해져서 다시 도전해요.</p></div></div>`,
     `<button class="big" id="go">부임할 팀 고르기 ▶</button>`);
-  $("go").onclick=()=>{ G.name=($("nm").value||"").trim()||"무명"; G.offers=makeOffers(0,false); G.screen="offers"; save(); render(); };
+  $("go").onclick=()=>{ if(document.activeElement&&document.activeElement.blur) document.activeElement.blur(); window.scrollTo(0,0); G.name=($("nm").value||"").trim()||"무명"; G.offers=makeOffers(0,false); G.screen="offers"; save(); render(); };
   // 첫 실행: 수석코치의 게임 소개
   if(!G.tut||!G.tut.intro) setTimeout(()=>tutor("intro",[
     {t:"안녕하세요, 감독님! 저는 <b>수석코치</b>예요. 이 게임, 30초 만에 설명해 드릴게요."},
@@ -411,8 +413,6 @@ function tutor(key,steps){ return new Promise(res=>{
   if(document.getElementById("tut")) return res();
   if(steps[0]&&steps[0].sel&&!document.querySelector(steps[0].sel)) return res(); // 화면이 이미 바뀌었으면 시작 안 함
   let i=0, loop=0, ready=false, lastKey=""; const snap=$("app").firstElementChild; const ov=document.createElement("div"); ov.id="tut"; document.body.appendChild(ov);
-  // 도움말 중에는 뒤 화면이 움직이지 않게 잠금
-  document.documentElement.classList.add("tutlock");
   const block=e=>{ if(!e.target.closest(".tb")) e.preventDefault(); };
   ov.addEventListener("wheel",block,{passive:false}); ov.addEventListener("touchmove",block,{passive:false});
   // 유저가 직접 해 봐야 하는 단계인지 (반드시 true/false로: toggle에 undefined가 가면 켜졌다 꺼졌다 해요)
@@ -423,20 +423,27 @@ function tutor(key,steps){ return new Promise(res=>{
     e.preventDefault(); e.stopPropagation(); };
   const onPg=e=>{ const st=steps[i]; if(ready&&st&&st.waitPg!=null&&e.detail===st.waitPg){ i++; if(i>=steps.length) end(false); else step(); } };
   document.addEventListener("click",guard,true); document.addEventListener("pgchange",onPg); addEventListener("resize",place);
-  const close=()=>{ cancelAnimationFrame(loop); removeEventListener("resize",place); document.removeEventListener("click",guard,true); document.removeEventListener("pgchange",onPg); document.documentElement.classList.remove("tutlock"); ov.remove(); };
+  const close=()=>{ cancelAnimationFrame(loop); removeEventListener("resize",place); document.removeEventListener("click",guard,true); document.removeEventListener("pgchange",onPg); ov.remove(); probe.remove(); };
   const end=all=>{ if(!isUnl) G.tut[key]=1; if(all&&!isUnl) G.tutOff=true; save(); close(); res(); };
   const target=()=>{ const st=steps[i]; return st&&st.sel?document.querySelector(st.sel):null; };
-  const keyOf=r=>r?[r.left,r.top,r.width,r.height,innerHeight].map(v=>Math.round(v)).join(","):"";
   // 밝은 부분·손가락·설명창 위치만 지금 위치에 맞춰 옮김 (내용을 다시 그리지 않아서 터치가 끊기지 않아요)
-  function place(){ if(!ready||!document.body.contains(ov)) return; const st=steps[i], el=target(), r=el?el.getBoundingClientRect():null; if(!r) return;
+  // 폰에서는 position:fixed 의 기준점이 요소 좌표(getBoundingClientRect)의 기준점과 어긋날 때가 있어요.
+  // 화면 구석(0,0)에 고정한 작은 점의 좌표를 재서 그 어긋남만큼 빼 줘요. 어긋남이 없으면 0이에요.
+  const probe=document.createElement("div"); probe.className="tprobe"; document.body.appendChild(probe); // 도움말을 다시 그려도 지워지지 않게 바깥에 둠
+  const offs=()=>{ const q=probe.getBoundingClientRect(); return [q.left,q.top]; };
+  const keyOf=(r)=>{ if(!r) return ""; const [ox,oy]=offs(); return [r.left,r.top,r.width,r.height,innerHeight,ox,oy].map(v=>Math.round(v)).join(","); };
+  function place(){ if(!ready||!document.body.contains(ov)) return; const st=steps[i], el=target(), rr=el?el.getBoundingClientRect():null; if(!rr) return;
+    const [ox,oy]=offs(), r={left:rr.left-ox,top:rr.top-oy,width:rr.width,height:rr.height,bottom:rr.bottom-oy};
     const top=st.top!=null?st.top:(r.top+r.height/2)>innerHeight*.5;
-    const sp=ov.querySelector(".spot"); if(sp) sp.style.cssText=`left:${r.left-12}px;top:${r.top-12}px;width:${r.width+24}px;height:${r.height+24}px;transition:none`;
+    const sp=ov.querySelector(".spot:not(.none)"); if(sp) sp.style.cssText=`left:${r.left-12}px;top:${r.top-12}px;width:${r.width+24}px;height:${r.height+24}px;transition:none`;
     const ar=ov.querySelector(".tarrow"); if(ar){ ar.style.left=(r.left+r.width/2-14)+"px"; ar.style.top=(top?r.top-44:r.bottom+8)+"px"; ar.textContent=top?"👇":"👆"; }
     const pn=ov.querySelector(".tpanel"); if(pn){ pn.classList.toggle("top",!!top);
       const h=pn.offsetHeight, gap=st.arrow?52:18, m=12; let y;
       if(top){ y=r.top-12-gap-h; if(y<m) y=m; } else { y=r.bottom+12+gap; if(y+h>innerHeight-m) y=innerHeight-m-h; }
       pn.style.top=y+"px"; pn.style.bottom="auto"; }
-    lastKey=keyOf(r); }
+    if(/[?&]dbg/.test(location.search)){ let d=ov.querySelector(".tdbg"); if(!d){ d=document.createElement("div"); d.className="tdbg"; ov.appendChild(d); }
+      const vv=window.visualViewport||{}; d.textContent=`점(${Math.round(ox)},${Math.round(oy)}) vv(${Math.round(vv.offsetLeft||0)},${Math.round(vv.offsetTop||0)}) 스크롤${Math.round(scrollY)} 높이${innerHeight}/${Math.round(vv.height||0)} 대상top${Math.round(rr.top)}`; }
+    lastKey=keyOf(rr); }
   function draw(){ const st=steps[i], el=target(), r=el?el.getBoundingClientRect():null, top=st.top!=null?st.top:r&&(r.top+r.height/2)>innerHeight*.5;
     ov.innerHTML=`<div class="spot ${r?"":"none"}"></div>${st.arrow&&r?`<div class="tarrow"></div>`:""}
       <div class="tpanel ${top?"top":""}"><img class="bob" src="${st.img||IMG.coach}" width="80" height="80" alt=""><div class="tb"><div class="tt">${st.t}</div>
