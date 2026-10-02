@@ -165,7 +165,7 @@ button.pulse{border-color:var(--yellow);box-shadow:0 0 0 3px rgba(255,201,60,.45
 .spot{position:fixed;border-radius:16px;box-shadow:0 0 0 9999px rgba(8,16,28,.64);pointer-events:none;transition:all .25s}
 .tutlock,.tutlock body{overflow:hidden;overscroll-behavior:none}
 #tut{touch-action:none}
-#tlay{position:absolute;left:0;top:0;width:100%;height:0;z-index:61;pointer-events:none}
+#tlay{position:absolute;left:0;top:0;width:100%;height:0;z-index:61;pointer-events:none;color:var(--ink);font-family:"Gowun Dodum",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
 #tlay .spot:not(.none){position:absolute}
 #tlay .tarrow{position:absolute}
 #tlay .tpanel.abs{position:absolute;bottom:auto;top:0}
@@ -420,7 +420,7 @@ function tutor(key,steps){ return new Promise(res=>{
   // #tut: 화면 전체를 덮어 터치만 받는 투명 막. 하이라이트·손가락·설명창은 #tlay 에 '페이지 안(문서 좌표)'으로 그려서,
   // 폰에서 화면이 위로 밀려도 내용과 같이 움직여 어긋나지 않아요.
   const ov=document.createElement("div"); ov.id="tut"; document.body.appendChild(ov);
-  const lay=document.createElement("div"); lay.id="tlay"; document.documentElement.appendChild(lay);
+  const lay=document.createElement("div"); lay.id="tlay"; document.body.appendChild(lay); // body 안에 둬야 글자색·글꼴을 물려받아요
   const block=e=>{ if(!e.target.closest(".tb")) e.preventDefault(); };
   [ov,lay].forEach(x=>{ x.addEventListener("wheel",block,{passive:false}); x.addEventListener("touchmove",block,{passive:false}); });
   // 유저가 직접 해 봐야 하는 단계인지 (반드시 true/false로: toggle에 undefined가 가면 켜졌다 꺼졌다 해요)
