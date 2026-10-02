@@ -410,46 +410,50 @@ function tutor(key,steps){ return new Promise(res=>{
   G.tut=G.tut||{}; const isUnl=key.startsWith("unl:"); if((G.tutOff&&!isUnl)||G.tut[key]) return res();
   if(document.getElementById("tut")) return res();
   if(steps[0]&&steps[0].sel&&!document.querySelector(steps[0].sel)) return res(); // 화면이 이미 바뀌었으면 시작 안 함
-  let i=0, raf=0, ready=false; const snap=$("app").firstElementChild; const ov=document.createElement("div"); ov.id="tut"; document.body.appendChild(ov);
+  let i=0, loop=0, ready=false, lastKey=""; const snap=$("app").firstElementChild; const ov=document.createElement("div"); ov.id="tut"; document.body.appendChild(ov);
   // 도움말 중에는 뒤 화면이 움직이지 않게 잠금
   document.documentElement.classList.add("tutlock");
   const block=e=>{ if(!e.target.closest(".tb")) e.preventDefault(); };
   ov.addEventListener("wheel",block,{passive:false}); ov.addEventListener("touchmove",block,{passive:false});
-  const onMove=()=>{ if(!ready) return; cancelAnimationFrame(raf); raf=requestAnimationFrame(draw); };
-  addEventListener("resize",onMove); addEventListener("scroll",onMove,true);
-  // 유저가 직접 해 봐야 하는 단계: 허락된 곳 말고는 눌러도 반응 없게
-  const isWait=st=>st&&(st.waitPg!=null||st.waitClick);
-  const guard=e=>{ const st=steps[i]; if(!isWait(st)||e.target.closest(".tpanel")) return;
-    const ok=st.waitClick?e.target.closest(st.waitClick):e.target.closest(".track,.dots");
-    if(!ok){ e.preventDefault(); e.stopPropagation(); } else if(st.waitClick&&ready){ end(false); } };
+  // 유저가 직접 해 봐야 하는 단계인지 (반드시 true/false로: toggle에 undefined가 가면 켜졌다 꺼졌다 해요)
+  const isWait=st=>!!(st&&(st.waitPg!=null||st.waitClick));
+  // 도움말이 떠 있는 동안 뒤 화면의 버튼이 눌리지 않게 막음 (직접 해 보는 단계의 허용된 곳만 예외)
+  const guard=e=>{ if(e.target.closest("#tut")) return; const st=steps[i];
+    if(isWait(st)){ const ok=st.waitClick?e.target.closest(st.waitClick):e.target.closest(".track,.dots"); if(ok){ if(st.waitClick&&ready) end(false); return; } }
+    e.preventDefault(); e.stopPropagation(); };
   const onPg=e=>{ const st=steps[i]; if(ready&&st&&st.waitPg!=null&&e.detail===st.waitPg){ i++; if(i>=steps.length) end(false); else step(); } };
-  document.addEventListener("click",guard,true); document.addEventListener("pgchange",onPg);
-  const close=()=>{ removeEventListener("resize",onMove); removeEventListener("scroll",onMove,true); document.removeEventListener("click",guard,true); document.removeEventListener("pgchange",onPg); cancelAnimationFrame(raf); document.documentElement.classList.remove("tutlock"); ov.remove(); };
+  document.addEventListener("click",guard,true); document.addEventListener("pgchange",onPg); addEventListener("resize",place);
+  const close=()=>{ cancelAnimationFrame(loop); removeEventListener("resize",place); document.removeEventListener("click",guard,true); document.removeEventListener("pgchange",onPg); document.documentElement.classList.remove("tutlock"); ov.remove(); };
   const end=all=>{ if(!isUnl) G.tut[key]=1; if(all&&!isUnl) G.tutOff=true; save(); close(); res(); };
-  // 밝은 부분을 지금 위치에 맞춰 다시 그림 (화면 크기가 바뀌거나 움직여도 따라감)
-  function draw(){ const st=steps[i], el=st.sel?document.querySelector(st.sel):null;
-    const r=el?el.getBoundingClientRect():null, top=st.top!=null?st.top:r&&(r.top+r.height/2)>innerHeight*.5;
-    ov.innerHTML=`${r?`<div class="spot" style="left:${r.left-12}px;top:${r.top-12}px;width:${r.width+24}px;height:${r.height+24}px"></div>`:`<div class="spot none"></div>`}
-      ${st.arrow&&r?`<div class="tarrow" style="left:${r.left+r.width/2-14}px;top:${top?r.top-44:r.bottom+8}px">${top?"👇":"👆"}</div>`:""}
+  const target=()=>{ const st=steps[i]; return st&&st.sel?document.querySelector(st.sel):null; };
+  const keyOf=r=>r?[r.left,r.top,r.width,r.height,innerHeight].map(v=>Math.round(v)).join(","):"";
+  // 밝은 부분·손가락·설명창 위치만 지금 위치에 맞춰 옮김 (내용을 다시 그리지 않아서 터치가 끊기지 않아요)
+  function place(){ if(!ready||!document.body.contains(ov)) return; const st=steps[i], el=target(), r=el?el.getBoundingClientRect():null; if(!r) return;
+    const top=st.top!=null?st.top:(r.top+r.height/2)>innerHeight*.5;
+    const sp=ov.querySelector(".spot"); if(sp) sp.style.cssText=`left:${r.left-12}px;top:${r.top-12}px;width:${r.width+24}px;height:${r.height+24}px;transition:none`;
+    const ar=ov.querySelector(".tarrow"); if(ar){ ar.style.left=(r.left+r.width/2-14)+"px"; ar.style.top=(top?r.top-44:r.bottom+8)+"px"; ar.textContent=top?"👇":"👆"; }
+    const pn=ov.querySelector(".tpanel"); if(pn){ pn.classList.toggle("top",!!top);
+      const h=pn.offsetHeight, gap=st.arrow?52:18, m=12; let y;
+      if(top){ y=r.top-12-gap-h; if(y<m) y=m; } else { y=r.bottom+12+gap; if(y+h>innerHeight-m) y=innerHeight-m-h; }
+      pn.style.top=y+"px"; pn.style.bottom="auto"; }
+    lastKey=keyOf(r); }
+  function draw(){ const st=steps[i], el=target(), r=el?el.getBoundingClientRect():null, top=st.top!=null?st.top:r&&(r.top+r.height/2)>innerHeight*.5;
+    ov.innerHTML=`<div class="spot ${r?"":"none"}"></div>${st.arrow&&r?`<div class="tarrow"></div>`:""}
       <div class="tpanel ${top?"top":""}"><img class="bob" src="${st.img||IMG.coach}" width="80" height="80" alt=""><div class="tb"><div class="tt">${st.t}</div>
       <div class="row"><button class="tskip">건너뛰기</button><span class="sub" style="font-size:.72rem">${i+1}/${steps.length}</span>${isWait(st)?`<span class="twait">${st.waitClick?"👆 눌러 보세요":"넘겨 보세요"}</span>`:`<button class="tnext">${i<steps.length-1?"다음 ▶":"알겠어요!"}</button>`}</div></div></div>`;
     ov.classList.toggle("pass",isWait(st));
     ov.querySelector(".tskip").onclick=e=>{ e.stopPropagation(); end(true); };
-    // 대화창을 화면 끝이 아니라 밝은 부분 바로 옆에 붙임
-    const pn=ov.querySelector(".tpanel");
-    if(r&&pn){ const h=pn.offsetHeight, gap=st.arrow?52:18, m=12; let y;
-      if(top){ y=r.top-12-gap-h; if(y<m) y=m; } else { y=r.bottom+12+gap; if(y+h>innerHeight-m) y=innerHeight-m-h; }
-      pn.style.top=y+"px"; pn.style.bottom="auto"; }
-  }
+    place(); }
+  // 화면이 움직이거나(스크롤·글꼴 로딩·주소창 변화·커지는 연출) 위치가 바뀌면 바로 따라감
+  const tick=()=>{ if(!document.body.contains(ov)) return; if(ready){ const el=target(), r=el?el.getBoundingClientRect():null; if(r&&keyOf(r)!==lastKey) place(); } loop=requestAnimationFrame(tick); };
   ov.onclick=()=>{ if(!ready||isWait(steps[i])) return; i++; if(i>=steps.length) end(false); else step(); };
   const step=()=>{ ready=false; const st=steps[i], el=st.sel?document.querySelector(st.sel):null;
     if(el) el.scrollIntoView({block:"center"});
     if(st.pg!=null&&slideTo) slideTo(st.pg); // 감독실 슬라이드: 설명할 화면으로 정확히 이동
     setTimeout(()=>{ if(i===0&&($("app").firstElementChild!==snap||(steps[0].sel&&!document.querySelector(steps[0].sel)))){ close(); return res(); }
-      draw(); ready=true; const me=i;
-      [250,700].forEach(t=>setTimeout(()=>{ if(i===me&&document.body.contains(ov)) draw(); },t)); // 화면이 자리 잡은 뒤 다시 맞춤
+      ready=true; draw();
     },el?((el.classList.contains("pop")||el.closest(".pop"))?620:300):30);
-  }; step(); }); }
+  }; loop=requestAnimationFrame(tick); step(); }); }
 
 // ---------- 감독실 (좌우 슬라이드 3장: 미션 · 감독실 · 감독 정보) ----------
 let curPg=1, slideTo=null, lastBat=.27;
