@@ -165,7 +165,11 @@ button.pulse{border-color:var(--yellow);box-shadow:0 0 0 3px rgba(255,201,60,.45
 .spot{position:fixed;border-radius:16px;box-shadow:0 0 0 9999px rgba(8,16,28,.64);pointer-events:none;transition:all .25s}
 .tutlock,.tutlock body{overflow:hidden;overscroll-behavior:none}
 #tut{touch-action:none}
-.tprobe{position:fixed;left:0;top:0;width:1px;height:1px;visibility:hidden;pointer-events:none}
+#tlay{position:absolute;left:0;top:0;width:100%;height:0;z-index:61;pointer-events:none}
+#tlay .spot:not(.none){position:absolute}
+#tlay .tarrow{position:absolute}
+#tlay .tpanel.abs{position:absolute;bottom:auto;top:0}
+#tlay .tpanel{pointer-events:auto}
 .tdbg{position:fixed;left:6px;top:6px;z-index:5;background:rgba(0,0,0,.75);color:#fff;font-size:11px;padding:3px 6px;border-radius:6px;pointer-events:none}
 .spot.none{inset:0;width:auto;height:auto;border-radius:0;box-shadow:none;background:rgba(8,16,28,.64)}
 .tarrow{position:fixed;font-size:28px;animation:bob 1s ease-in-out infinite;pointer-events:none}
@@ -412,50 +416,53 @@ function tutor(key,steps){ return new Promise(res=>{
   G.tut=G.tut||{}; const isUnl=key.startsWith("unl:"); if((G.tutOff&&!isUnl)||G.tut[key]) return res();
   if(document.getElementById("tut")) return res();
   if(steps[0]&&steps[0].sel&&!document.querySelector(steps[0].sel)) return res(); // 화면이 이미 바뀌었으면 시작 안 함
-  let i=0, loop=0, ready=false, lastKey=""; const snap=$("app").firstElementChild; const ov=document.createElement("div"); ov.id="tut"; document.body.appendChild(ov);
+  let i=0, loop=0, ready=false, lastKey=""; const snap=$("app").firstElementChild;
+  // #tut: 화면 전체를 덮어 터치만 받는 투명 막. 하이라이트·손가락·설명창은 #tlay 에 '페이지 안(문서 좌표)'으로 그려서,
+  // 폰에서 화면이 위로 밀려도 내용과 같이 움직여 어긋나지 않아요.
+  const ov=document.createElement("div"); ov.id="tut"; document.body.appendChild(ov);
+  const lay=document.createElement("div"); lay.id="tlay"; document.documentElement.appendChild(lay);
   const block=e=>{ if(!e.target.closest(".tb")) e.preventDefault(); };
-  ov.addEventListener("wheel",block,{passive:false}); ov.addEventListener("touchmove",block,{passive:false});
+  [ov,lay].forEach(x=>{ x.addEventListener("wheel",block,{passive:false}); x.addEventListener("touchmove",block,{passive:false}); });
   // 유저가 직접 해 봐야 하는 단계인지 (반드시 true/false로: toggle에 undefined가 가면 켜졌다 꺼졌다 해요)
   const isWait=st=>!!(st&&(st.waitPg!=null||st.waitClick));
   // 도움말이 떠 있는 동안 뒤 화면의 버튼이 눌리지 않게 막음 (직접 해 보는 단계의 허용된 곳만 예외)
-  const guard=e=>{ if(e.target.closest("#tut")) return; const st=steps[i];
+  const guard=e=>{ if(e.target.closest("#tut,#tlay")) return; const st=steps[i];
     if(isWait(st)){ const ok=st.waitClick?e.target.closest(st.waitClick):e.target.closest(".track,.dots"); if(ok){ if(st.waitClick&&ready) end(false); return; } }
     e.preventDefault(); e.stopPropagation(); };
   const onPg=e=>{ const st=steps[i]; if(ready&&st&&st.waitPg!=null&&e.detail===st.waitPg){ i++; if(i>=steps.length) end(false); else step(); } };
   document.addEventListener("click",guard,true); document.addEventListener("pgchange",onPg); addEventListener("resize",place);
-  const close=()=>{ cancelAnimationFrame(loop); removeEventListener("resize",place); document.removeEventListener("click",guard,true); document.removeEventListener("pgchange",onPg); ov.remove(); probe.remove(); };
+  const close=()=>{ cancelAnimationFrame(loop); removeEventListener("resize",place); document.removeEventListener("click",guard,true); document.removeEventListener("pgchange",onPg); ov.remove(); lay.remove(); };
   const end=all=>{ if(!isUnl) G.tut[key]=1; if(all&&!isUnl) G.tutOff=true; save(); close(); res(); };
   const target=()=>{ const st=steps[i]; return st&&st.sel?document.querySelector(st.sel):null; };
-  // 밝은 부분·손가락·설명창 위치만 지금 위치에 맞춰 옮김 (내용을 다시 그리지 않아서 터치가 끊기지 않아요)
-  // 폰에서는 position:fixed 의 기준점이 요소 좌표(getBoundingClientRect)의 기준점과 어긋날 때가 있어요.
-  // 화면 구석(0,0)에 고정한 작은 점의 좌표를 재서 그 어긋남만큼 빼 줘요. 어긋남이 없으면 0이에요.
-  const probe=document.createElement("div"); probe.className="tprobe"; document.body.appendChild(probe); // 도움말을 다시 그려도 지워지지 않게 바깥에 둠
-  const offs=()=>{ const q=probe.getBoundingClientRect(); return [q.left,q.top]; };
-  const keyOf=(r)=>{ if(!r) return ""; const [ox,oy]=offs(); return [r.left,r.top,r.width,r.height,innerHeight,ox,oy].map(v=>Math.round(v)).join(","); };
+  const vvp=()=>{ const v=window.visualViewport; return v?{top:v.pageTop,h:v.height,ot:v.offsetTop}:{top:pageYOffset,h:innerHeight,ot:0}; };
+  const keyOf=r=>{ if(!r) return ""; const v=vvp(); return [r.left,r.top,r.width,r.height,innerHeight,pageYOffset,v.top,v.h].map(x=>Math.round(x)).join(","); };
+  // 문서 좌표로 밝은 부분·손가락·설명창 위치를 맞춰요 (내용을 다시 그리지 않아서 터치가 끊기지 않아요)
   function place(){ if(!ready||!document.body.contains(ov)) return; const st=steps[i], el=target(), rr=el?el.getBoundingClientRect():null; if(!rr) return;
-    const [ox,oy]=offs(), r={left:rr.left-ox,top:rr.top-oy,width:rr.width,height:rr.height,bottom:rr.bottom-oy};
-    const top=st.top!=null?st.top:(r.top+r.height/2)>innerHeight*.5;
-    const sp=ov.querySelector(".spot:not(.none)"); if(sp) sp.style.cssText=`left:${r.left-12}px;top:${r.top-12}px;width:${r.width+24}px;height:${r.height+24}px;transition:none`;
-    const ar=ov.querySelector(".tarrow"); if(ar){ ar.style.left=(r.left+r.width/2-14)+"px"; ar.style.top=(top?r.top-44:r.bottom+8)+"px"; ar.textContent=top?"👇":"👆"; }
-    const pn=ov.querySelector(".tpanel"); if(pn){ pn.classList.toggle("top",!!top);
+    const v=vvp(), X=rr.left+pageXOffset, Y=rr.top+pageYOffset, W=rr.width, H=rr.height;
+    const top=st.top!=null?st.top:(Y+H/2-v.top)>v.h*.5;
+    const sp=lay.querySelector(".spot:not(.none)"); if(sp) sp.style.cssText=`left:${X-12}px;top:${Y-12}px;width:${W+24}px;height:${H+24}px;transition:none`;
+    const ar=lay.querySelector(".tarrow"); if(ar){ ar.style.left=(X+W/2-14)+"px"; ar.style.top=(top?Y-44:Y+H+8)+"px"; ar.textContent=top?"👇":"👆"; }
+    const pn=lay.querySelector(".tpanel.abs"); if(pn){ pn.classList.toggle("top",!!top);
       const h=pn.offsetHeight, gap=st.arrow?52:18, m=12; let y;
-      if(top){ y=r.top-12-gap-h; if(y<m) y=m; } else { y=r.bottom+12+gap; if(y+h>innerHeight-m) y=innerHeight-m-h; }
-      pn.style.top=y+"px"; pn.style.bottom="auto"; }
+      if(top){ y=Y-12-gap-h; if(y<v.top+m) y=v.top+m; } else { y=Y+H+12+gap; if(y+h>v.top+v.h-m) y=v.top+v.h-m-h; }
+      pn.style.top=y+"px"; }
     if(/[?&]dbg/.test(location.search)){ let d=ov.querySelector(".tdbg"); if(!d){ d=document.createElement("div"); d.className="tdbg"; ov.appendChild(d); }
-      const vv=window.visualViewport||{}; d.textContent=`점(${Math.round(ox)},${Math.round(oy)}) vv(${Math.round(vv.offsetLeft||0)},${Math.round(vv.offsetTop||0)}) 스크롤${Math.round(scrollY)} 높이${innerHeight}/${Math.round(vv.height||0)} 대상top${Math.round(rr.top)}`; }
+      d.textContent=`vv오프셋${Math.round(v.ot)} vv상단${Math.round(v.top)} 스크롤${Math.round(pageYOffset)} 높이${innerHeight}/${Math.round(v.h)} 대상top${Math.round(rr.top)}`; }
     lastKey=keyOf(rr); }
-  function draw(){ const st=steps[i], el=target(), r=el?el.getBoundingClientRect():null, top=st.top!=null?st.top:r&&(r.top+r.height/2)>innerHeight*.5;
-    ov.innerHTML=`<div class="spot ${r?"":"none"}"></div>${st.arrow&&r?`<div class="tarrow"></div>`:""}
-      <div class="tpanel ${top?"top":""}"><img class="bob" src="${st.img||IMG.coach}" width="80" height="80" alt=""><div class="tb"><div class="tt">${st.t}</div>
+  function draw(){ const st=steps[i], el=target(), r=el?el.getBoundingClientRect():null, v=vvp(), top=st.top!=null?st.top:(r?(r.top+pageYOffset+r.height/2-v.top)>v.h*.5:false);
+    lay.innerHTML=`<div class="spot ${r?"":"none"}"></div>${st.arrow&&r?`<div class="tarrow"></div>`:""}
+      <div class="tpanel ${top?"top":""} ${r?"abs":""}"><img class="bob" src="${st.img||IMG.coach}" width="80" height="80" alt=""><div class="tb"><div class="tt">${st.t}</div>
       <div class="row"><button class="tskip">건너뛰기</button><span class="sub" style="font-size:.72rem">${i+1}/${steps.length}</span>${isWait(st)?`<span class="twait">${st.waitClick?"👆 눌러 보세요":"넘겨 보세요"}</span>`:`<button class="tnext">${i<steps.length-1?"다음 ▶":"알겠어요!"}</button>`}</div></div></div>`;
     ov.classList.toggle("pass",isWait(st));
-    ov.querySelector(".tskip").onclick=e=>{ e.stopPropagation(); end(true); };
+    lay.querySelector(".tskip").onclick=e=>{ e.stopPropagation(); end(true); };
+    const nx=lay.querySelector(".tnext"); if(nx) nx.onclick=e=>{ e.stopPropagation(); advance(); };
     place(); }
   // 화면이 움직이거나(스크롤·글꼴 로딩·주소창 변화·커지는 연출) 위치가 바뀌면 바로 따라감
   const tick=()=>{ if(!document.body.contains(ov)) return; if(ready){ const el=target(), r=el?el.getBoundingClientRect():null; if(r&&keyOf(r)!==lastKey) place(); } loop=requestAnimationFrame(tick); };
-  ov.onclick=()=>{ if(!ready||isWait(steps[i])) return; i++; if(i>=steps.length) end(false); else step(); };
+  const advance=()=>{ if(!ready||isWait(steps[i])) return; i++; if(i>=steps.length) end(false); else step(); };
+  ov.onclick=advance;
   const step=()=>{ ready=false; const st=steps[i], el=st.sel?document.querySelector(st.sel):null;
-    if(el) el.scrollIntoView({block:"center"});
+    if(el) el.scrollIntoView({block:"nearest"}); // 이미 보이면 화면을 움직이지 않아요 (폰에서 화면이 밀리는 것 방지)
     if(st.pg!=null&&slideTo) slideTo(st.pg); // 감독실 슬라이드: 설명할 화면으로 정확히 이동
     setTimeout(()=>{ if(i===0&&($("app").firstElementChild!==snap||(steps[0].sel&&!document.querySelector(steps[0].sel)))){ close(); return res(); }
       ready=true; draw();
