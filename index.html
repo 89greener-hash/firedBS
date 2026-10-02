@@ -376,7 +376,8 @@ function offers(){
     <p class="sub">${o.some(x=>x.easy)?"아래 무대는 버티기 쉬워 능력치를 쌓기 좋고, 같은 무대는 다시 도전하는 선택이에요.":"팀 컬러와 윗분의 성격을 보고 골라요."} 강팀은 이기기 쉽지만 기대가 높고, 약팀은 어렵지만 경험치를 더 받아요.</p>
     ${o.map((x,i)=>{ const st=STAGES[x.stage], ow=OWN[x.owner]; return `<button class="offer" data-o="${i}"><div class="row"><span>${ownerIcon(x.stage,40)} ${x.name}</span><small class="tcl jua">${tcLine(x.tc||(x.tc=teamColor(x.rating)))}</small></div>${tcHTML(x.tc)}
       <small>${st.n}${x.easy?" · 한 단계 아래":""} · ${ow.t} ${st.owner} · 시즌 ${st.games}경기</small><small class="tiertx ${tierOf(x.rating)}">${tierText(x.stage,x.rating)}</small><small class="owd">🧓 ${ow.t} 성격 · ${ow.d}</small><small>"${pick(ow.hi)}"</small></button>`; }).join("")}`);
-  document.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{ const x=o[+b.dataset.o]; startJob(x); });
+  const t0=Date.now(); // 이름 입력의 시작 버튼을 두 번 누르는 등 빠른 터치로 팀이 저절로 골라지는 것을 막음
+  document.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{ if(Date.now()-t0<800) return; const x=o[+b.dataset.o]; startJob(x); });
   setTimeout(()=>tutor("offers",[
     {sel:".offer",t:"부임할 <b>팀</b>을 고르는 화면이에요. 팀마다 조건이 달라요. 하나씩 볼게요."},
     {sel:".offer .tcs",t:"팀마다 <b>타격 · 투수 · 수비</b> 강점이 달라요. 별이 많을수록 팀이 강하고, 강한 쪽은 <b>승부처 숫자</b>에도 드러나요. 타격이 강하면 타율이, 투수가 강하면 구위가 좋게 나와요."},
@@ -408,6 +409,7 @@ let quote0=null;
 function tutor(key,steps){ return new Promise(res=>{
   G.tut=G.tut||{}; const isUnl=key.startsWith("unl:"); if((G.tutOff&&!isUnl)||G.tut[key]) return res();
   if(document.getElementById("tut")) return res();
+  if(steps[0]&&steps[0].sel&&!document.querySelector(steps[0].sel)) return res(); // 화면이 이미 바뀌었으면 시작 안 함
   let i=0, raf=0, ready=false; const snap=$("app").firstElementChild; const ov=document.createElement("div"); ov.id="tut"; document.body.appendChild(ov);
   // 도움말 중에는 뒤 화면이 움직이지 않게 잠금
   document.documentElement.classList.add("tutlock");
@@ -443,7 +445,7 @@ function tutor(key,steps){ return new Promise(res=>{
   const step=()=>{ ready=false; const st=steps[i], el=st.sel?document.querySelector(st.sel):null;
     if(el) el.scrollIntoView({block:"center"});
     if(st.pg!=null&&slideTo) slideTo(st.pg); // 감독실 슬라이드: 설명할 화면으로 정확히 이동
-    setTimeout(()=>{ if(i===0&&$("app").firstElementChild!==snap){ close(); return res(); }
+    setTimeout(()=>{ if(i===0&&($("app").firstElementChild!==snap||(steps[0].sel&&!document.querySelector(steps[0].sel)))){ close(); return res(); }
       draw(); ready=true; const me=i;
       [250,700].forEach(t=>setTimeout(()=>{ if(i===me&&document.body.contains(ov)) draw(); },t)); // 화면이 자리 잡은 뒤 다시 맞춤
     },el?((el.classList.contains("pop")||el.closest(".pop"))?620:300):30);
